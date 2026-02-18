@@ -1,8 +1,16 @@
+//
+//  ScanViewModel.swift
+//  ArchiveBuddy
+//
+//  Created by Amier Davis on 2/17/26.
+//
+
 import Foundation
 import SwiftUI
 import SwiftData
 import AVFoundation
 import FoundationModels // New: Import FoundationModels
+import NaturalLanguage // New: For EmbeddingService
 
 enum AIProcessingError: Error, LocalizedError {
     case languageModelNotAvailable
@@ -28,6 +36,7 @@ final class ScanViewModel {
     private let modelContext: ModelContext // Changed to be a direct dependency as per user's init
     private let visionService: VisionService
     private let imageStorageService: ImageStorageService
+    private let embeddingService: EmbeddingService // New: EmbeddingService dependency
     private var languageModelSession: LanguageModelSession? // New: For FoundationModels
 
     // MARK: - UI State
@@ -47,10 +56,15 @@ final class ScanViewModel {
     ///   - modelContext: The SwiftData model context for persistence.
     ///   - visionService: The service for OCR operations.
     ///   - imageStorageService: The service for storing images.
-    init(modelContext: ModelContext, visionService: VisionService = VisionService(), imageStorageService: ImageStorageService = ImageStorageService()) {
+    ///   - embeddingService: The service for generating text embeddings.
+    init(modelContext: ModelContext,
+         visionService: VisionService = VisionService(),
+         imageStorageService: ImageStorageService = ImageStorageService(),
+         embeddingService: EmbeddingService = EmbeddingService()) { // New: Inject EmbeddingService
         self.modelContext = modelContext
         self.visionService = visionService
         self.imageStorageService = imageStorageService
+        self.embeddingService = embeddingService // Assign the injected service
         // Initialize LanguageModelSession if the system language model is available
         if SystemLanguageModel.default.isAvailable {
             self.languageModelSession = LanguageModelSession()
@@ -154,13 +168,22 @@ final class ScanViewModel {
             return
         }
 
-        let newEntry = JournalEntry(rawText: recognizedText, imagePath: imagePath, journalTitle: title)
-
         do {
+            // 1. Generate embedding for the recognized text
+            let embeddingMLMultiArray = try await embeddingService.generateEmbedding(for: recognizedText)
+            let embeddingData = try embeddingMLMultiArray.toData() // Convert MLMultiArray to Data
+
+            // 2. Create the new JournalEntry with the embedding data
+            let newEntry = JournalEntry(rawText: recognizedText, imagePath: imagePath, journalTitle: title, embedding: embeddingData)
+
+            // 3. Insert and save the entry
             modelContext.insert(newEntry)
             try modelContext.save() // Explicitly save the context
             resetScanState() // Clear state and dismiss review screen
             print("Journal entry saved successfully!")
+        } catch let error as EmbeddingServiceError {
+            errorMessage = error.localizedDescription
+            print("Error generating embedding: \(error)")
         } catch {
             errorMessage = "Failed to save journal entry: \(error.localizedDescription)"
             print("Error saving entry: \(error)")
