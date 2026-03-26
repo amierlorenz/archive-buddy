@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		640E99C42F749EA8001B41BB /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 640E99C32F749EA8001B41BB /* GRDB */; };
+		640E99F92F74B90D001B41BB /* SVDB in Frameworks */ = {isa = PBXBuildFile; productRef = 640E99F82F74B90D001B41BB /* SVDB */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		64F71B7B2F44DD850033A6F2 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +57,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				640E99C42F749EA8001B41BB /* GRDB in Frameworks */,
+				640E99F92F74B90D001B41BB /* SVDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +119,8 @@
 			);
 			name = ArchiveBuddy;
 			packageProductDependencies = (
+				640E99C32F749EA8001B41BB /* GRDB */,
+				640E99F82F74B90D001B41BB /* SVDB */,
 			);
 			productName = ArchiveBuddy;
 			productReference = 64F71B6D2F44DD830033A6F2 /* ArchiveBuddy.app */;
@@ -195,6 +204,10 @@
 			);
 			mainGroup = 64F71B642F44DD830033A6F2;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				640E99C22F749EA8001B41BB /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+				640E99F72F74B90D001B41BB /* XCRemoteSwiftPackageReference "SVDB" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 64F71B6E2F44DD830033A6F2 /* Products */;
 			projectDirPath = "";
@@ -582,6 +595,38 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		640E99C22F749EA8001B41BB /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift.git";
+			requirement = {
+				branch = master;
+				kind = branch;
+			};
+		};
+		640E99F72F74B90D001B41BB /* XCRemoteSwiftPackageReference "SVDB" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Dripfarm/SVDB.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		640E99C32F749EA8001B41BB /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 640E99C22F749EA8001B41BB /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			productName = GRDB;
+		};
+		640E99F82F74B90D001B41BB /* SVDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 640E99F72F74B90D001B41BB /* XCRemoteSwiftPackageReference "SVDB" */;
+			productName = SVDB;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 64F71B652F44DD830033A6F2 /* Project object */;
 }
