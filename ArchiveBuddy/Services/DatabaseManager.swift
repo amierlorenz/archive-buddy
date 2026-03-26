@@ -3,6 +3,7 @@
 import Foundation
 import GRDB
 
+@Observable
 final class DatabaseManager {
 
     private let dbQueue: DatabaseQueue

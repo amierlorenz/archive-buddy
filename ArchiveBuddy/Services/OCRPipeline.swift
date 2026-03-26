@@ -5,6 +5,7 @@ import FoundationModels
 /// Stateless OCR pipeline: Vision text recognition → FoundationModels cleanup.
 /// Photos are never written to disk at any stage.
 /// All intermediate data (rawOCRText, wordConfidenceMap) exists only in memory.
+@Observable
 final class OCRPipeline {
 
     // TUNE: words with confidence below this threshold are highlighted in the review UI

@@ -2,6 +2,7 @@ import Foundation
 
 /// Coordinates multi-archive RAG retrieval. Knows nothing about LLM generation —
 /// it returns a fully-formed augmented prompt and structured citations for the caller.
+@Observable
 final class ArchiveQueryService {
 
     // TUNE: number of top results kept after merging all archives
