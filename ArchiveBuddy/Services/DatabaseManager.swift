@@ -8,10 +8,14 @@ final class DatabaseManager {
 
     private let dbQueue: DatabaseQueue
 
-    init() {
+    init(inMemory: Bool = false) {
         do {
-            let path = try Self.databasePath()
-            dbQueue = try DatabaseQueue(path: path)
+            if inMemory {
+                dbQueue = try DatabaseQueue()
+            } else {
+                let path = try Self.databasePath()
+                dbQueue = try DatabaseQueue(path: path)
+            }
             try Self.migrate(dbQueue)
         } catch {
             fatalError("DatabaseManager failed to initialize: \(error)")
@@ -351,5 +355,13 @@ extension DatabaseManager {
                 .filter(Column("sessionId") == sessionId)
                 .deleteAll(db)
         }
+    }
+}
+
+// MARK: - Preview
+extension DatabaseManager {
+    /// Creates an in-memory database for previews .
+    static func preview() -> DatabaseManager {
+        DatabaseManager(inMemory: true)
     }
 }
