@@ -1,7 +1,69 @@
 import Foundation
 import FoundationModels
 
-/// Manages on-device LLM generation and per-session LanguageModelSession state.
+// MARK: - GenerationSessionError
+
+/// Normalised errors from a GenerationSession.
+/// Decouples LLM's catch blocks from FoundationModels-specific error types,
+/// making them reachable in tests without Apple Intelligence.
+enum GenerationSessionError: Error {
+    case exceededContextWindowSize
+    case rateLimited
+}
+
+// MARK: - GenerationSession
+
+/// Abstraction over LanguageModelSession that enables dependency injection in tests.
+protocol GenerationSession: AnyObject {
+    /// Streams content tokens for the given prompt.
+    /// Implementations must convert framework-specific errors to GenerationSessionError.
+    func stream(prompt: String) -> AsyncThrowingStream<String, Error>
+
+    /// Returns a condensed copy of this session retaining only the first and last
+    /// transcript entries, used to recover from context-window overflow.
+    func condensed() -> any GenerationSession
+
+    /// The current session transcript, used for persistence after each response.
+    var transcript: Transcript { get }
+}
+
+// MARK: - LanguageModelSession conformance
+
+extension LanguageModelSession: GenerationSession {
+    func stream(prompt: String) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    for try await partial in streamResponse(to: prompt) {
+                        continuation.yield(partial.content)
+                    }
+                    continuation.finish()
+                } catch GenerationError.exceededContextWindowSize {
+                    continuation.finish(throwing: GenerationSessionError.exceededContextWindowSize)
+                } catch GenerationError.rateLimited {
+                    continuation.finish(throwing: GenerationSessionError.rateLimited)
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    func condensed() -> any GenerationSession {
+        var condensedEntries = [Transcript.Entry]()
+        if let first = transcript.first {
+            condensedEntries.append(first)
+            if transcript.count > 1, let last = transcript.last {
+                condensedEntries.append(last)
+            }
+        }
+        return LanguageModelSession(transcript: Transcript(entries: condensedEntries))
+    }
+}
+
+// MARK: - LLM
+
+/// Manages on-device LLM generation and per-session GenerationSession state.
 /// Knows nothing about archives — it receives a fully-formed augmented prompt from
 /// ArchiveQueryService and generates a response.
 @MainActor
@@ -16,20 +78,32 @@ final class LLM {
     var isResponding: Bool = false
 
     private let db: DatabaseManager
-    /// One LanguageModelSession per chat session, keyed by session UUID.
-    private var sessions: [UUID: LanguageModelSession] = [:]
+    /// One GenerationSession per chat session, keyed by session UUID.
+    private var sessions: [UUID: any GenerationSession] = [:]
+    /// Factory for creating new sessions. Injected in tests to avoid Apple Intelligence.
+    private let makeSession: (Transcript?) -> any GenerationSession
 
-    init(db: DatabaseManager) {
+    init(
+        db: DatabaseManager,
+        makeSession: @escaping (Transcript?) -> any GenerationSession = { transcript in
+            if let transcript {
+                LanguageModelSession(transcript: transcript)
+            } else {
+                LanguageModelSession()
+            }
+        }
+    ) {
         self.db = db
+        self.makeSession = makeSession
     }
 
     // MARK: - Session management
 
-    /// Loads or creates the LanguageModelSession for a chat session.
+    /// Loads or creates the GenerationSession for a chat session.
     /// Call this when the user navigates to an existing session so the
     /// transcript is ready before the first message is sent.
     func switchToSession(_ session: ChatSession) {
-        _ = languageModelSession(for: session.id)
+        _ = generationSession(for: session.id)
     }
 
     /// Fetches all persisted messages for a session, ordered oldest-first.
@@ -47,14 +121,13 @@ final class LLM {
     @discardableResult
     func streamResponse(to prompt: String, sessionId: UUID) async -> String {
         isResponding = true
-        streamingResponse = ""
+        defer {
+            streamingResponse = ""
+            isResponding = false
+        }
 
-        let session = languageModelSession(for: sessionId)
-        let result = await generate(prompt: prompt, using: session, sessionId: sessionId)
-
-        streamingResponse = ""
-        isResponding = false
-        return result
+        let session = generationSession(for: sessionId)
+        return await generate(prompt: prompt, using: session, sessionId: sessionId)
     }
 
     /// Generates a short title from the first assistant response in a session.
@@ -69,11 +142,11 @@ final class LLM {
             Title:
             """
 
-        let throwaway = LanguageModelSession()
+        let throwaway = makeSession(nil)
         var result = ""
         do {
-            for try await partial in throwaway.streamResponse(to: prompt) {
-                result = partial.content
+            for try await token in throwaway.stream(prompt: prompt) {
+                result = token
             }
         } catch {
             return "New Chat"
@@ -91,35 +164,38 @@ final class LLM {
 
     private func generate(
         prompt: String,
-        using session: LanguageModelSession,
+        using session: any GenerationSession,
         sessionId: UUID
     ) async -> String {
         do {
             var fullResponse = ""
-            for try await partial in session.streamResponse(to: prompt) {
-                streamingResponse = partial.content
-                fullResponse = partial.content
+            for try await token in session.stream(prompt: prompt) {
+                streamingResponse = token
+                fullResponse = token
             }
             saveTranscript(session.transcript, sessionId: sessionId)
             return fullResponse
 
-        } catch LanguageModelSession.GenerationError.exceededContextWindowSize {
+        } catch GenerationSessionError.exceededContextWindowSize {
             // Condense transcript to first + last entry, retry once
-            let condensed = newSession(previousSession: session)
+            let condensed = session.condensed()
             sessions[sessionId] = condensed
             do {
                 var fullResponse = ""
-                for try await partial in condensed.streamResponse(to: prompt) {
-                    streamingResponse = partial.content
-                    fullResponse = partial.content
+                for try await token in condensed.stream(prompt: prompt) {
+                    streamingResponse = token
+                    fullResponse = token
                 }
                 saveTranscript(condensed.transcript, sessionId: sessionId)
                 return fullResponse
             } catch {
+                // Condensed session also failed — replace it with a fresh session so
+                // subsequent messages are not permanently broken.
+                sessions[sessionId] = makeSession(nil)
                 return userFacingError(error)
             }
 
-        } catch LanguageModelSession.GenerationError.rateLimited {
+        } catch GenerationSessionError.rateLimited {
             return "The on-device model is currently busy. Please wait a moment and try again."
 
         } catch {
@@ -127,33 +203,13 @@ final class LLM {
         }
     }
 
-    /// Returns an existing LanguageModelSession for a chat session, or creates one
+    /// Returns an existing GenerationSession for a chat session, or creates one
     /// by loading the persisted transcript from the database.
-    private func languageModelSession(for sessionId: UUID) -> LanguageModelSession {
+    private func generationSession(for sessionId: UUID) -> any GenerationSession {
         if let existing = sessions[sessionId] { return existing }
-
-        if let transcript = loadTranscript(for: sessionId) {
-            let session = LanguageModelSession(transcript: transcript)
-            sessions[sessionId] = session
-            return session
-        }
-
-        let session = LanguageModelSession()
+        let session = makeSession(loadTranscript(for: sessionId))
         sessions[sessionId] = session
         return session
-    }
-
-    /// Condenses an overflowed session to its first + last transcript entry.
-    private func newSession(previousSession: LanguageModelSession) -> LanguageModelSession {
-        let entries = previousSession.transcript
-        var condensed = [Transcript.Entry]()
-        if let first = entries.first {
-            condensed.append(first)
-            if entries.count > 1, let last = entries.last {
-                condensed.append(last)
-            }
-        }
-        return LanguageModelSession(transcript: Transcript(entries: condensed))
     }
 
     // MARK: - Transcript persistence
