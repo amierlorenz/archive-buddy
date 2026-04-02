@@ -20,11 +20,8 @@ protocol GenerationSession: AnyObject {
     func stream(prompt: String) -> AsyncThrowingStream<String, Error>
 
     /// Returns a condensed copy of this session retaining only the first and last
-    /// transcript entries, used to recover from context-window overflow.
+    /// transcript entries, used as a last-resort retry when a single prompt overflows.
     func condensed() -> any GenerationSession
-
-    /// The current session transcript, used for persistence after each response.
-    var transcript: Transcript { get }
 }
 
 // MARK: - LanguageModelSession conformance
@@ -63,9 +60,10 @@ extension LanguageModelSession: GenerationSession {
 
 // MARK: - LLM
 
-/// Manages on-device LLM generation and per-session GenerationSession state.
-/// Knows nothing about archives — it receives a fully-formed augmented prompt from
-/// ArchiveQueryService and generates a response.
+/// Manages on-device LLM generation.
+/// Each call to streamResponse uses a fresh GenerationSession so the
+/// LanguageModelSession transcript never accumulates across turns. Conversation
+/// continuity is maintained by injecting the last few DB messages into the prompt.
 @MainActor
 @Observable
 final class LLM {
@@ -78,20 +76,16 @@ final class LLM {
     var isResponding: Bool = false
 
     private let db: DatabaseManager
-    /// One GenerationSession per chat session, keyed by session UUID.
-    private var sessions: [UUID: any GenerationSession] = [:]
     /// Factory for creating new sessions. Injected in tests to avoid Apple Intelligence.
-    private let makeSession: (Transcript?) -> any GenerationSession
+    private let makeSession: () -> any GenerationSession
+
+    /// Number of prior messages to include as conversation history in each prompt.
+    /// 6 messages = 3 user/assistant exchanges, keeping context manageable.
+    private static let historyMessageLimit = 6
 
     init(
         db: DatabaseManager,
-        makeSession: @escaping (Transcript?) -> any GenerationSession = { transcript in
-            if let transcript {
-                LanguageModelSession(transcript: transcript)
-            } else {
-                LanguageModelSession()
-            }
-        }
+        makeSession: @escaping () -> any GenerationSession = { LanguageModelSession() }
     ) {
         self.db = db
         self.makeSession = makeSession
@@ -99,12 +93,8 @@ final class LLM {
 
     // MARK: - Session management
 
-    /// Loads or creates the GenerationSession for a chat session.
-    /// Call this when the user navigates to an existing session so the
-    /// transcript is ready before the first message is sent.
-    func switchToSession(_ session: ChatSession) {
-        _ = generationSession(for: session.id)
-    }
+    /// No-op. Retained for call-site compatibility; sessions are now stateless per-turn.
+    func switchToSession(_ session: ChatSession) {}
 
     /// Fetches all persisted messages for a session, ordered oldest-first.
     func loadMessages(for sessionId: UUID) -> [ChatMessage] {
@@ -116,8 +106,7 @@ final class LLM {
     /// Streams a response to the given augmented prompt, updating `streamingResponse`
     /// with each partial token. Returns the complete response string when done.
     /// Errors (rate limiting, guardrail violations, context overflow) are returned
-    /// as user-facing strings rather than thrown so the ViewModel can save them as
-    /// assistant messages without a separate error-handling path.
+    /// as user-facing strings so the ViewModel can save them as assistant messages.
     @discardableResult
     func streamResponse(to prompt: String, sessionId: UUID) async -> String {
         isResponding = true
@@ -125,13 +114,12 @@ final class LLM {
             streamingResponse = ""
             isResponding = false
         }
-
-        let session = generationSession(for: sessionId)
-        return await generate(prompt: prompt, using: session, sessionId: sessionId)
+        let fullPrompt = promptWithHistory(augmentedPrompt: prompt, sessionId: sessionId)
+        return await generate(prompt: fullPrompt, using: makeSession())
     }
 
     /// Generates a short title from the first assistant response in a session.
-    /// Uses a throwaway session so the title prompt does not pollute the chat transcript.
+    /// Uses a throwaway session so the title prompt does not pollute any transcript.
     func generateTitle(from response: String, sessionId: UUID) async -> String {
         let prompt = """
             Generate a short title (2–4 words) for a journal chat session based on \
@@ -142,10 +130,9 @@ final class LLM {
             Title:
             """
 
-        let throwaway = makeSession(nil)
         var result = ""
         do {
-            for try await token in throwaway.stream(prompt: prompt) {
+            for try await token in makeSession().stream(prompt: prompt) {
                 result = token
             }
         } catch {
@@ -162,36 +149,28 @@ final class LLM {
 
     // MARK: - Private helpers
 
-    private func generate(
-        prompt: String,
-        using session: any GenerationSession,
-        sessionId: UUID
-    ) async -> String {
+    private func generate(prompt: String, using session: any GenerationSession) async -> String {
         do {
             var fullResponse = ""
             for try await token in session.stream(prompt: prompt) {
                 streamingResponse = token
                 fullResponse = token
             }
-            saveTranscript(session.transcript, sessionId: sessionId)
             return fullResponse
 
         } catch GenerationSessionError.exceededContextWindowSize {
-            // Condense transcript to first + last entry, retry once
+            // The prompt itself is too large for a fresh session — retry once with
+            // a condensed session as a last resort. With stateless sessions this is
+            // rare; it means a single RAG context + history block exceeds the limit.
             let condensed = session.condensed()
-            sessions[sessionId] = condensed
             do {
                 var fullResponse = ""
                 for try await token in condensed.stream(prompt: prompt) {
                     streamingResponse = token
                     fullResponse = token
                 }
-                saveTranscript(condensed.transcript, sessionId: sessionId)
                 return fullResponse
             } catch {
-                // Condensed session also failed — replace it with a fresh session so
-                // subsequent messages are not permanently broken.
-                sessions[sessionId] = makeSession(nil)
                 return userFacingError(error)
             }
 
@@ -203,28 +182,37 @@ final class LLM {
         }
     }
 
-    /// Returns an existing GenerationSession for a chat session, or creates one
-    /// by loading the persisted transcript from the database.
-    private func generationSession(for sessionId: UUID) -> any GenerationSession {
-        if let existing = sessions[sessionId] { return existing }
-        let session = makeSession(loadTranscript(for: sessionId))
-        sessions[sessionId] = session
-        return session
-    }
+    /// Prepends the last N prior messages as a "Previous conversation" section so
+    /// each fresh session still has conversational context without accumulating transcript.
+    /// Drops the most recent DB message (the current user turn just inserted by
+    /// ChatViewModel) so it is not duplicated alongside the "Question:" line.
+    private func promptWithHistory(augmentedPrompt: String, sessionId: UUID) -> String {
+        let allMessages = (try? db.fetchMessages(sessionId: sessionId)) ?? []
+        let priorMessages = allMessages.dropLast()
+        let recentMessages = priorMessages.suffix(Self.historyMessageLimit)
 
-    // MARK: - Transcript persistence
+        guard !recentMessages.isEmpty else { return augmentedPrompt }
 
-    private func saveTranscript(_ transcript: Transcript, sessionId: UUID) {
-        guard let json = try? JSONEncoder().encode(transcript),
-              let jsonString = String(data: json, encoding: .utf8) else { return }
-        try? db.updateTranscriptJSON(jsonString, sessionId: sessionId)
-    }
+        let historyText = recentMessages.map { msg in
+            "\(msg.isUser ? "User" : "Assistant"): \(msg.text)"
+        }.joined(separator: "\n")
 
-    private func loadTranscript(for sessionId: UUID) -> Transcript? {
-        guard let session = try? db.fetchChatSession(id: sessionId),
-              !session.transcriptJSON.isEmpty,
-              let data = session.transcriptJSON.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(Transcript.self, from: data)
+        // Inject history before the "Question:" line so the model sees prior
+        // exchanges as context before answering the current question.
+        guard let questionRange = augmentedPrompt.range(of: "\nQuestion:") else {
+            return augmentedPrompt
+        }
+
+        let beforeQuestion = String(augmentedPrompt[..<questionRange.lowerBound])
+        let fromQuestion = String(augmentedPrompt[questionRange.lowerBound...])
+
+        return """
+            \(beforeQuestion)
+
+            Previous conversation:
+            \(historyText)
+            \(fromQuestion)
+            """
     }
 
     // MARK: - Error formatting

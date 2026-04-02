@@ -31,7 +31,7 @@ struct ChatViewModelTests {
 
     /// Builds an LLM whose factory always returns the same mock session.
     private func llm(responding session: MockGenerationSession) -> LLM {
-        LLM(db: db, makeSession: { _ in session })
+        LLM(db: db, makeSession: { session })
     }
 
     // MARK: - isSending invariants
@@ -94,7 +94,7 @@ struct ChatViewModelTests {
         let vm = ChatViewModel(
             session: chat,
             db: db,
-            llm: LLM(db: db, makeSession: { _ in overflowing }),
+            llm: LLM(db: db, makeSession: { overflowing }),
             archiveQueryService: archiveQueryService
         )
 
@@ -151,7 +151,7 @@ struct ChatViewModelTests {
         let vm = ChatViewModel(
             session: chat,
             db: db,
-            llm: LLM(db: db, makeSession: { _ in MockGenerationSession(behavior: .succeed("reply")) }),
+            llm: LLM(db: db, makeSession: { MockGenerationSession(behavior: .succeed("reply")) }),
             archiveQueryService: archiveQueryService
         )
 
@@ -209,16 +209,18 @@ struct ChatViewModelTests {
         let session1 = MockGenerationSession(behavior: .fail(GenerationSessionError.exceededContextWindowSize))
         session1.condensedBehavior = .fail(GenerationSessionError.exceededContextWindowSize)
 
-        let session2 = MockGenerationSession(behavior: .succeed("recovered"))
+        let session2 = MockGenerationSession(behavior: .succeed(""))   // generateTitle (result discarded)
 
-        // session1 → chat attempt (overflows)
-        // session2 → fresh session stored after double overflow
-        // any subsequent call → session2 is cached; extra makeSession calls get MockGenerationSession(succeed(""))
-        var sessionQueue = [session1, session2] as [MockGenerationSession]
+        // Each makeSession() call gets the next session from the queue.
+        // session1 → first streamResponse (double overflow)
+        // session2 → generateTitle after the first exchange (isFirstMessage = true)
+        // session3 → second streamResponse (succeeds with "recovered")
+        let session3 = MockGenerationSession(behavior: .succeed("recovered"))
+        var sessionQueue = [session1, session2, session3] as [MockGenerationSession]
         let vm = ChatViewModel(
             session: chat,
             db: db,
-            llm: LLM(db: db, makeSession: { _ in
+            llm: LLM(db: db, makeSession: {
                 sessionQueue.isEmpty
                     ? MockGenerationSession(behavior: .succeed(""))
                     : sessionQueue.removeFirst()

@@ -22,14 +22,15 @@ final class MockGenerationSession: GenerationSession, @unchecked Sendable {
     var behavior: Behavior
     /// Behavior used when condensed() is called on this session.
     var condensedBehavior: Behavior = .succeed("")
-
-    var transcript: Transcript = Transcript(entries: [])
+    /// The last prompt passed to stream(prompt:), useful for inspecting injected history.
+    private(set) var lastReceivedPrompt: String?
 
     init(behavior: Behavior) {
         self.behavior = behavior
     }
 
     func stream(prompt: String) -> AsyncThrowingStream<String, Error> {
+        lastReceivedPrompt = prompt
         let b = behavior
         return AsyncThrowingStream { continuation in
             switch b {
@@ -57,6 +58,18 @@ extension GenerationSessionError: @retroactive CustomTestStringConvertible {
         switch self {
         case .exceededContextWindowSize: "exceededContextWindowSize"
         case .rateLimited: "rateLimited"
+        }
+    }
+}
+
+// MARK: - MockGenerationSession: CustomTestStringConvertible (for parameterized output)
+
+extension MockGenerationSession: CustomTestStringConvertible {
+    public var testDescription: String {
+        switch behavior {
+        case .succeed(let t): "succeed(\"\(t)\")"
+        case .fail(let e): "fail(\(e))"
+        case .hang: "hang"
         }
     }
 }
