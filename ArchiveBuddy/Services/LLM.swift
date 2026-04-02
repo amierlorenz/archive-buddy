@@ -1,9 +1,69 @@
 import Foundation
 import FoundationModels
 
-/// Manages on-device LLM generation and per-session LanguageModelSession state.
-/// Knows nothing about archives — it receives a fully-formed augmented prompt from
-/// ArchiveQueryService and generates a response.
+// MARK: - GenerationSessionError
+
+/// Normalised errors from a GenerationSession.
+/// Decouples LLM's catch blocks from FoundationModels-specific error types,
+/// making them reachable in tests without Apple Intelligence.
+enum GenerationSessionError: Error {
+    case exceededContextWindowSize
+    case rateLimited
+}
+
+// MARK: - GenerationSession
+
+/// Abstraction over LanguageModelSession that enables dependency injection in tests.
+protocol GenerationSession: AnyObject {
+    /// Streams content tokens for the given prompt.
+    /// Implementations must convert framework-specific errors to GenerationSessionError.
+    func stream(prompt: String) -> AsyncThrowingStream<String, Error>
+
+    /// Returns a condensed copy of this session retaining only the first and last
+    /// transcript entries, used as a last-resort retry when a single prompt overflows.
+    func condensed() -> any GenerationSession
+}
+
+// MARK: - LanguageModelSession conformance
+
+extension LanguageModelSession: GenerationSession {
+    func stream(prompt: String) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    for try await partial in streamResponse(to: prompt) {
+                        continuation.yield(partial.content)
+                    }
+                    continuation.finish()
+                } catch GenerationError.exceededContextWindowSize {
+                    continuation.finish(throwing: GenerationSessionError.exceededContextWindowSize)
+                } catch GenerationError.rateLimited {
+                    continuation.finish(throwing: GenerationSessionError.rateLimited)
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    func condensed() -> any GenerationSession {
+        var condensedEntries = [Transcript.Entry]()
+        if let first = transcript.first {
+            condensedEntries.append(first)
+            if transcript.count > 1, let last = transcript.last {
+                condensedEntries.append(last)
+            }
+        }
+        return LanguageModelSession(transcript: Transcript(entries: condensedEntries))
+    }
+}
+
+// MARK: - LLM
+
+/// Manages on-device LLM generation.
+/// Each call to streamResponse uses a fresh GenerationSession so the
+/// LanguageModelSession transcript never accumulates across turns. Conversation
+/// continuity is maintained by injecting the last few DB messages into the prompt.
 @MainActor
 @Observable
 final class LLM {
@@ -16,21 +76,25 @@ final class LLM {
     var isResponding: Bool = false
 
     private let db: DatabaseManager
-    /// One LanguageModelSession per chat session, keyed by session UUID.
-    private var sessions: [UUID: LanguageModelSession] = [:]
+    /// Factory for creating new sessions. Injected in tests to avoid Apple Intelligence.
+    private let makeSession: () -> any GenerationSession
 
-    init(db: DatabaseManager) {
+    /// Number of prior messages to include as conversation history in each prompt.
+    /// 6 messages = 3 user/assistant exchanges, keeping context manageable.
+    private static let historyMessageLimit = 6
+
+    init(
+        db: DatabaseManager,
+        makeSession: @escaping () -> any GenerationSession = { LanguageModelSession() }
+    ) {
         self.db = db
+        self.makeSession = makeSession
     }
 
     // MARK: - Session management
 
-    /// Loads or creates the LanguageModelSession for a chat session.
-    /// Call this when the user navigates to an existing session so the
-    /// transcript is ready before the first message is sent.
-    func switchToSession(_ session: ChatSession) {
-        _ = languageModelSession(for: session.id)
-    }
+    /// No-op. Retained for call-site compatibility; sessions are now stateless per-turn.
+    func switchToSession(_ session: ChatSession) {}
 
     /// Fetches all persisted messages for a session, ordered oldest-first.
     func loadMessages(for sessionId: UUID) -> [ChatMessage] {
@@ -42,23 +106,20 @@ final class LLM {
     /// Streams a response to the given augmented prompt, updating `streamingResponse`
     /// with each partial token. Returns the complete response string when done.
     /// Errors (rate limiting, guardrail violations, context overflow) are returned
-    /// as user-facing strings rather than thrown so the ViewModel can save them as
-    /// assistant messages without a separate error-handling path.
+    /// as user-facing strings so the ViewModel can save them as assistant messages.
     @discardableResult
     func streamResponse(to prompt: String, sessionId: UUID) async -> String {
         isResponding = true
-        streamingResponse = ""
-
-        let session = languageModelSession(for: sessionId)
-        let result = await generate(prompt: prompt, using: session, sessionId: sessionId)
-
-        streamingResponse = ""
-        isResponding = false
-        return result
+        defer {
+            streamingResponse = ""
+            isResponding = false
+        }
+        let fullPrompt = promptWithHistory(augmentedPrompt: prompt, sessionId: sessionId)
+        return await generate(prompt: fullPrompt, using: makeSession())
     }
 
     /// Generates a short title from the first assistant response in a session.
-    /// Uses a throwaway session so the title prompt does not pollute the chat transcript.
+    /// Uses a throwaway session so the title prompt does not pollute any transcript.
     func generateTitle(from response: String, sessionId: UUID) async -> String {
         let prompt = """
             Generate a short title (2–4 words) for a journal chat session based on \
@@ -69,11 +130,10 @@ final class LLM {
             Title:
             """
 
-        let throwaway = LanguageModelSession()
         var result = ""
         do {
-            for try await partial in throwaway.streamResponse(to: prompt) {
-                result = partial.content
+            for try await token in makeSession().stream(prompt: prompt) {
+                result = token
             }
         } catch {
             return "New Chat"
@@ -89,37 +149,32 @@ final class LLM {
 
     // MARK: - Private helpers
 
-    private func generate(
-        prompt: String,
-        using session: LanguageModelSession,
-        sessionId: UUID
-    ) async -> String {
+    private func generate(prompt: String, using session: any GenerationSession) async -> String {
         do {
             var fullResponse = ""
-            for try await partial in session.streamResponse(to: prompt) {
-                streamingResponse = partial.content
-                fullResponse = partial.content
+            for try await token in session.stream(prompt: prompt) {
+                streamingResponse = token
+                fullResponse = token
             }
-            saveTranscript(session.transcript, sessionId: sessionId)
             return fullResponse
 
-        } catch LanguageModelSession.GenerationError.exceededContextWindowSize {
-            // Condense transcript to first + last entry, retry once
-            let condensed = newSession(previousSession: session)
-            sessions[sessionId] = condensed
+        } catch GenerationSessionError.exceededContextWindowSize {
+            // The prompt itself is too large for a fresh session — retry once with
+            // a condensed session as a last resort. With stateless sessions this is
+            // rare; it means a single RAG context + history block exceeds the limit.
+            let condensed = session.condensed()
             do {
                 var fullResponse = ""
-                for try await partial in condensed.streamResponse(to: prompt) {
-                    streamingResponse = partial.content
-                    fullResponse = partial.content
+                for try await token in condensed.stream(prompt: prompt) {
+                    streamingResponse = token
+                    fullResponse = token
                 }
-                saveTranscript(condensed.transcript, sessionId: sessionId)
                 return fullResponse
             } catch {
                 return userFacingError(error)
             }
 
-        } catch LanguageModelSession.GenerationError.rateLimited {
+        } catch GenerationSessionError.rateLimited {
             return "The on-device model is currently busy. Please wait a moment and try again."
 
         } catch {
@@ -127,48 +182,37 @@ final class LLM {
         }
     }
 
-    /// Returns an existing LanguageModelSession for a chat session, or creates one
-    /// by loading the persisted transcript from the database.
-    private func languageModelSession(for sessionId: UUID) -> LanguageModelSession {
-        if let existing = sessions[sessionId] { return existing }
+    /// Prepends the last N prior messages as a "Previous conversation" section so
+    /// each fresh session still has conversational context without accumulating transcript.
+    /// Drops the most recent DB message (the current user turn just inserted by
+    /// ChatViewModel) so it is not duplicated alongside the "Question:" line.
+    private func promptWithHistory(augmentedPrompt: String, sessionId: UUID) -> String {
+        let allMessages = (try? db.fetchMessages(sessionId: sessionId)) ?? []
+        let priorMessages = allMessages.dropLast()
+        let recentMessages = priorMessages.suffix(Self.historyMessageLimit)
 
-        if let transcript = loadTranscript(for: sessionId) {
-            let session = LanguageModelSession(transcript: transcript)
-            sessions[sessionId] = session
-            return session
+        guard !recentMessages.isEmpty else { return augmentedPrompt }
+
+        let historyText = recentMessages.map { msg in
+            "\(msg.isUser ? "User" : "Assistant"): \(msg.text)"
+        }.joined(separator: "\n")
+
+        // Inject history before the "Question:" line so the model sees prior
+        // exchanges as context before answering the current question.
+        guard let questionRange = augmentedPrompt.range(of: "\nQuestion:") else {
+            return augmentedPrompt
         }
 
-        let session = LanguageModelSession()
-        sessions[sessionId] = session
-        return session
-    }
+        let beforeQuestion = String(augmentedPrompt[..<questionRange.lowerBound])
+        let fromQuestion = String(augmentedPrompt[questionRange.lowerBound...])
 
-    /// Condenses an overflowed session to its first + last transcript entry.
-    private func newSession(previousSession: LanguageModelSession) -> LanguageModelSession {
-        let entries = previousSession.transcript
-        var condensed = [Transcript.Entry]()
-        if let first = entries.first {
-            condensed.append(first)
-            if entries.count > 1, let last = entries.last {
-                condensed.append(last)
-            }
-        }
-        return LanguageModelSession(transcript: Transcript(entries: condensed))
-    }
+        return """
+            \(beforeQuestion)
 
-    // MARK: - Transcript persistence
-
-    private func saveTranscript(_ transcript: Transcript, sessionId: UUID) {
-        guard let json = try? JSONEncoder().encode(transcript),
-              let jsonString = String(data: json, encoding: .utf8) else { return }
-        try? db.updateTranscriptJSON(jsonString, sessionId: sessionId)
-    }
-
-    private func loadTranscript(for sessionId: UUID) -> Transcript? {
-        guard let session = try? db.fetchChatSession(id: sessionId),
-              !session.transcriptJSON.isEmpty,
-              let data = session.transcriptJSON.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(Transcript.self, from: data)
+            Previous conversation:
+            \(historyText)
+            \(fromQuestion)
+            """
     }
 
     // MARK: - Error formatting

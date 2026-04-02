@@ -19,19 +19,11 @@
 			remoteGlobalIDString = 64F71B6C2F44DD830033A6F2;
 			remoteInfo = ArchiveBuddy;
 		};
-		64F71B852F44DD850033A6F2 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 64F71B652F44DD830033A6F2 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 64F71B6C2F44DD830033A6F2;
-			remoteInfo = ArchiveBuddy;
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		64F71B6D2F44DD830033A6F2 /* ArchiveBuddy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ArchiveBuddy.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		64F71B7A2F44DD850033A6F2 /* ArchiveBuddyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ArchiveBuddyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		64F71B842F44DD850033A6F2 /* ArchiveBuddyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ArchiveBuddyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -43,11 +35,6 @@
 		64F71B7D2F44DD850033A6F2 /* ArchiveBuddyTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ArchiveBuddyTests;
-			sourceTree = "<group>";
-		};
-		64F71B872F44DD850033A6F2 /* ArchiveBuddyUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = ArchiveBuddyUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -69,13 +56,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		64F71B812F44DD850033A6F2 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -84,7 +64,6 @@
 			children = (
 				64F71B6F2F44DD830033A6F2 /* ArchiveBuddy */,
 				64F71B7D2F44DD850033A6F2 /* ArchiveBuddyTests */,
-				64F71B872F44DD850033A6F2 /* ArchiveBuddyUITests */,
 				64F71B6E2F44DD830033A6F2 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -94,7 +73,6 @@
 			children = (
 				64F71B6D2F44DD830033A6F2 /* ArchiveBuddy.app */,
 				64F71B7A2F44DD850033A6F2 /* ArchiveBuddyTests.xctest */,
-				64F71B842F44DD850033A6F2 /* ArchiveBuddyUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -149,29 +127,6 @@
 			productReference = 64F71B7A2F44DD850033A6F2 /* ArchiveBuddyTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		64F71B832F44DD850033A6F2 /* ArchiveBuddyUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 64F71B942F44DD850033A6F2 /* Build configuration list for PBXNativeTarget "ArchiveBuddyUITests" */;
-			buildPhases = (
-				64F71B802F44DD850033A6F2 /* Sources */,
-				64F71B812F44DD850033A6F2 /* Frameworks */,
-				64F71B822F44DD850033A6F2 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				64F71B862F44DD850033A6F2 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				64F71B872F44DD850033A6F2 /* ArchiveBuddyUITests */,
-			);
-			name = ArchiveBuddyUITests;
-			packageProductDependencies = (
-			);
-			productName = ArchiveBuddyUITests;
-			productReference = 64F71B842F44DD850033A6F2 /* ArchiveBuddyUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -186,10 +141,6 @@
 						CreatedOnToolsVersion = 26.3;
 					};
 					64F71B792F44DD850033A6F2 = {
-						CreatedOnToolsVersion = 26.3;
-						TestTargetID = 64F71B6C2F44DD830033A6F2;
-					};
-					64F71B832F44DD850033A6F2 = {
 						CreatedOnToolsVersion = 26.3;
 						TestTargetID = 64F71B6C2F44DD830033A6F2;
 					};
@@ -215,7 +166,6 @@
 			targets = (
 				64F71B6C2F44DD830033A6F2 /* ArchiveBuddy */,
 				64F71B792F44DD850033A6F2 /* ArchiveBuddyTests */,
-				64F71B832F44DD850033A6F2 /* ArchiveBuddyUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -229,13 +179,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		64F71B782F44DD850033A6F2 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		64F71B822F44DD850033A6F2 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -259,13 +202,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		64F71B802F44DD850033A6F2 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -273,11 +209,6 @@
 			isa = PBXTargetDependency;
 			target = 64F71B6C2F44DD830033A6F2 /* ArchiveBuddy */;
 			targetProxy = 64F71B7B2F44DD850033A6F2 /* PBXContainerItemProxy */;
-		};
-		64F71B862F44DD850033A6F2 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 64F71B6C2F44DD830033A6F2 /* ArchiveBuddy */;
-			targetProxy = 64F71B852F44DD850033A6F2 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -515,46 +446,6 @@
 			};
 			name = Release;
 		};
-		64F71B952F44DD850033A6F2 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = G5HSWQ55KR;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.mieracle.ArchiveBuddyUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = ArchiveBuddy;
-			};
-			name = Debug;
-		};
-		64F71B962F44DD850033A6F2 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = G5HSWQ55KR;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.mieracle.ArchiveBuddyUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = ArchiveBuddy;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -581,15 +472,6 @@
 			buildConfigurations = (
 				64F71B922F44DD850033A6F2 /* Debug */,
 				64F71B932F44DD850033A6F2 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		64F71B942F44DD850033A6F2 /* Build configuration list for PBXNativeTarget "ArchiveBuddyUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				64F71B952F44DD850033A6F2 /* Debug */,
-				64F71B962F44DD850033A6F2 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
