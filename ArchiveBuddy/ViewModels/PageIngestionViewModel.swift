@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import UIKit
 
 /// Manages the multi-step batch page ingestion flow:
 /// photo selection → OCR → user review/edit → confirm → embed.
@@ -30,9 +31,13 @@ final class PageIngestionViewModel {
 
     // MARK: - Stage 1: OCR
 
-    /// Runs OCR on each image sequentially, appending a DraftPage as each completes
-    /// so the review UI can display results progressively.
-    func processImages(_ images: [CGImage], defaultDate: Date = Date()) async {
+    /// Converts UIImages to CGImages and runs the OCR pipeline.
+    /// Views should call this — not the CGImage overload.
+    func processImages(_ images: [UIImage], defaultDate: Date = Date()) async {
+        await processImages(images.compactMap { $0.cgImage }, defaultDate: defaultDate)
+    }
+
+    private func processImages(_ images: [CGImage], defaultDate: Date = Date()) async {
         isProcessing = true
         processingProgress = 0
         draftPages = []

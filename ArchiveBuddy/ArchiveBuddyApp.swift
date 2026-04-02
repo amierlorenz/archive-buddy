@@ -14,6 +14,10 @@ struct ArchiveBuddyApp: App {
         self.llm = LLM(db: db)
         self.archiveQueryService = ArchiveQueryService(db: db)
         self.ocrPipeline = OCRPipeline()
+
+        #if DEBUG
+        Task { await SampleData.seedIfNeeded(db: db) }
+        #endif
     }
 
     var body: some Scene {
