@@ -10,6 +10,7 @@ struct AddPagesView: View {
 
     @State private var vm: PageIngestionViewModel?
     @State private var pickerItems: [PhotosPickerItem] = []
+    @State private var showCamera = false
 
     var body: some View {
         NavigationStack {
@@ -57,18 +58,33 @@ struct AddPagesView: View {
 
     private var pickerPrompt: some View {
         VStack(spacing: 16) {
-            Text("Select photos from your camera roll to add as pages.")
+            Text("Add pages by taking a photo or choosing from your camera roll.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
+            Button {
+                showCamera = true
+            } label: {
+                Label("Take Photo", systemImage: "camera")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
             PhotosPicker(
-                "Select Photos",
                 selection: $pickerItems,
                 maxSelectionCount: 20,
                 matching: .images
-            )
-            .buttonStyle(.borderedProminent)
+            ) {
+                Label("Choose from Camera Roll", systemImage: "photo.on.rectangle")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
         }
         .padding()
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPickerView { image in
+                Task { await vm?.processImages([image]) }
+            }
+            .ignoresSafeArea()
+        }
     }
 
     private func processingView(vm: PageIngestionViewModel) -> some View {
@@ -89,7 +105,7 @@ struct AddPagesView: View {
                         .resizable()
                         .scaledToFit()
                         .frame(maxHeight: 180)
-                        .cornerRadius(6)
+                        .clipShape(.rect(cornerRadius: 6))
 
                     // Editable cleaned text
                     TextField(
