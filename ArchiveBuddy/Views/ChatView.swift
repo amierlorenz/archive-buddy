@@ -5,10 +5,12 @@ struct ChatView: View {
     @Environment(LLM.self) private var llm
     @Environment(ArchiveQueryService.self) private var archiveQueryService
     let session: ChatSession
+    var focusOnAppear: Bool = false
 
     @State private var vm: ChatViewModel?
     @State private var inputText = ""
     @State private var scrollID: UUID?
+    @FocusState private var inputFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,7 +27,11 @@ struct ChatView: View {
                 llm: llm,
                 archiveQueryService: archiveQueryService
             )
+            if focusOnAppear {
+                inputFocused = true
+            }
         }
+        .toolbar(.hidden, for: .tabBar)
     }
 
     // MARK: - Message list
@@ -51,6 +57,7 @@ struct ChatView: View {
                 }
                 .padding()
             }
+            .scrollDismissesKeyboard(.interactively)
             .onChange(of: llm.streamingResponse) { _, _ in
                 withAnimation { proxy.scrollTo("streaming") }
             }
@@ -76,6 +83,7 @@ struct ChatView: View {
             TextField("Message", text: $inputText, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(1...5)
+                .focused($inputFocused)
 
             Button {
                 let text = inputText

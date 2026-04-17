@@ -3,6 +3,7 @@ import SwiftUI
 struct NewChatView: View {
     @Environment(\.dismiss) private var dismiss
     let chatListVM: ChatListViewModel
+    @Binding var activeSession: ChatSession?
 
     @State private var archives: [Archive] = []
     @State private var selectedIds: Set<UUID> = []
@@ -23,8 +24,10 @@ struct NewChatView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Start Chat") {
-                        _ = try? chatListVM.createSession(selectedArchiveIds: Array(selectedIds))
-                        dismiss()
+                        if let session = try? chatListVM.createSession(selectedArchiveIds: Array(selectedIds)) {
+                            activeSession = session
+                            dismiss()
+                        }
                     }
                     .disabled(selectedIds.isEmpty)
                 }

@@ -6,7 +6,8 @@ struct ChatListView: View {
     @Environment(ArchiveQueryService.self) private var archiveQueryService
     @State private var vm: ChatListViewModel?
     @State private var showNewChat = false
-    
+    @State private var activeSession: ChatSession?
+
     private var hasChats: Bool {
         vm?.sessions.isEmpty == false
     }
@@ -49,9 +50,12 @@ struct ChatListView: View {
             .toolbar {
                 Button("New Chat") { showNewChat = true }
             }
+            .navigationDestination(item: $activeSession) { session in
+                ChatView(session: session, focusOnAppear: true)
+            }
             .sheet(isPresented: $showNewChat) {
                 if let vm {
-                    NewChatView(chatListVM: vm)
+                    NewChatView(chatListVM: vm, activeSession: $activeSession)
                 }
             }
         }
