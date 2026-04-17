@@ -80,8 +80,8 @@ struct AddPagesView: View {
         }
         .padding()
         .fullScreenCover(isPresented: $showCamera) {
-            CameraPickerView { image in
-                Task { await vm?.processImages([image]) }
+            CameraPickerView { images in
+                Task { await vm?.processImages(images) }
             }
             .ignoresSafeArea()
         }

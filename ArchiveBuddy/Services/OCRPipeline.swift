@@ -62,7 +62,7 @@ final class OCRPipeline {
             }
 
             request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = false  // FM cleanup handles correction; skip double-processing
+            request.usesLanguageCorrection = true  
 
             let handler = VNImageRequestHandler(cgImage: image, options: [:])
             do {
