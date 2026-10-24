@@ -34,6 +34,7 @@ final class ChatViewModel {
         guard !isSending else { return }
 
         isSending = true
+        defer { isSending = false }
         let isFirstMessage = messages.isEmpty
 
         // 1. Persist and display user message immediately
@@ -76,7 +77,5 @@ final class ChatViewModel {
 
         // 6. Bump updatedAt so this session sorts to the top of the list
         try? db.touchSession(session.id)
-
-        isSending = false
     }
 }

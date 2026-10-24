@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-struct ChatSession: Identifiable, Codable, Equatable, Sendable, FetchableRecord, PersistableRecord {
+struct ChatSession: Identifiable, Codable, Equatable, Hashable, Sendable, FetchableRecord, PersistableRecord {
     static var databaseTableName: String { "chatSessions" }
 
     var id: UUID
