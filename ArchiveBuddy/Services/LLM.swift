@@ -27,7 +27,8 @@ protocol GenerationSession: AnyObject {
 // MARK: - LanguageModelSession conformance
 
 extension LanguageModelSession: GenerationSession {
-    func stream(prompt: String) -> AsyncThrowingStream<String, Error> {
+    // Swift.Error: since iOS 27, a bare `Error` here resolves to LanguageModelSession.Error.
+    func stream(prompt: String) -> AsyncThrowingStream<String, Swift.Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
