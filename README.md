@@ -33,7 +33,7 @@ The photo is never saved to disk. Only the cleaned text survives into the databa
 
 ### 2. Text → Searchable Vector (RAGModel)
 
-Confirmed text is chunked by `DocumentProcessor` (word-boundary chunks with overlap) and each chunk is converted into a vector embedding:
+Confirmed text is chunked by `DocumentProcessor` (sentence-aligned chunks with overlap; sentences over the limit are split into word windows so no text is dropped) and each chunk is converted into a vector embedding:
 
 1. Split chunk into words.
 2. Look up each word in Apple's `NLEmbedding` (built-in semantic word model).
@@ -155,3 +155,7 @@ There are no mocked services — tests run against real instances. `DatabaseMana
 - Store photos persistently to display alongside chat citations
 - Voice correction as an alternative to text editing in the review screen
 - Replace the two-stage Vision + FoundationModels OCR pipeline with a single FoundationModels vision pass once image input is supported by the framework
+
+## Credits
+
+The on-device RAG approach was inspired by [Aeru](https://github.com/sskarz/Aeru) by sskarz, an Apple Intelligence assistant with on-device RAG and web search.
